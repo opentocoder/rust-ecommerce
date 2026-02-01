@@ -140,14 +140,6 @@ trunk serve  # Starts on port 8080
 | Frontend Pages | 14 | ✅ Pass |
 | **Total** | **32** | **✅ All Pass** |
 
-## Development
-
-Built with [CAS (Claude Autonomy System)](https://github.com/anthropics/claude-code) - an autonomous development framework.
-
-## License
-
-MIT
-
 ---
 
 *Built with Rust, Axum & Yew*
