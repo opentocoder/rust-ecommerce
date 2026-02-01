@@ -140,6 +140,10 @@ trunk serve  # Starts on port 8080
 | Frontend Pages | 14 | ✅ Pass |
 | **Total** | **32** | **✅ All Pass** |
 
+## License
+
+MIT
+
 ---
 
 *Built with Rust, Axum & Yew*
