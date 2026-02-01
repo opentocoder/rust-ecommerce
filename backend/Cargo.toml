@@ -1,0 +1,41 @@
+[package]
+name = "backend"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+# Web framework
+axum = { version = "0.7", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite"] }
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Auth
+jsonwebtoken = "9"
+argon2 = { version = "0.5", features = ["std"] }
+rand = "0.8"
+
+# Shared types
+shared = { path = "../shared" }
+
+# Error handling
+thiserror.workspace = true
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Utils
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+dotenvy = "0.15"

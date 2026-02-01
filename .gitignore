@@ -57,6 +57,14 @@ venv/
 
 # Rust
 target/
+Cargo.lock
+
+# WASM/Trunk
+frontend/dist/
+*.wasm
+
+# 验收截图 (可选保留)
+# 验收/
 
 # 临时文件
 *.tmp
