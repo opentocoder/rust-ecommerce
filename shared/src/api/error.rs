@@ -28,7 +28,16 @@ impl ApiError {
     }
 
     pub fn internal_error(message: impl Into<String>) -> Self {
-        Self::new("INTERNAL_ERROR", message)
+        // In production, don't expose internal error details
+        let is_production = std::env::var("RUST_ENV")
+            .map(|v| v == "production" || v == "prod")
+            .unwrap_or(false);
+
+        if is_production {
+            Self::new("INTERNAL_ERROR", "An internal error occurred. Please try again later.")
+        } else {
+            Self::new("INTERNAL_ERROR", message)
+        }
     }
 
     pub fn validation_error(message: impl Into<String>) -> Self {

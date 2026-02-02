@@ -51,7 +51,7 @@ pub async fn create_order(
     let auth_header = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok());
     let user_id = get_user_id(&state, auth_header).await?;
 
-    // Get cart items
+    // Get cart items first (outside transaction for read)
     let cart = CartRepository::get_cart(&state.db.pool, user_id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiError::internal_error(e.to_string()))))?;
@@ -63,42 +63,17 @@ pub async fn create_order(
         ));
     }
 
-    // Verify stock and collect order items
-    let mut order_items = Vec::new();
-    for item in &cart.items {
-        let product = ProductRepository::get_by_id(&state.db.pool, item.product_id)
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiError::internal_error(e.to_string()))))?
-            .ok_or_else(|| {
-                (StatusCode::NOT_FOUND, Json(ApiError::not_found(format!("Product {} not found", item.product_id))))
-            })?;
-
-        if product.stock < item.quantity {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                Json(ApiError::bad_request(format!("Insufficient stock for {}", product.name))),
-            ));
-        }
-
-        order_items.push((item.product_id, product.name.clone(), item.quantity, product.price));
-    }
-
-    // Create order
-    let order_with_items = OrderRepository::create(&state.db.pool, user_id, order_items.clone())
+    // Use transaction for atomic stock check, update, order creation, and cart clear
+    let order_with_items = OrderRepository::create_order_atomic(&state.db.pool, user_id, &cart.items)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiError::internal_error(e.to_string()))))?;
-
-    // Update stock
-    for (product_id, _, quantity, _) in order_items {
-        ProductRepository::update_stock(&state.db.pool, product_id, -quantity)
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiError::internal_error(e.to_string()))))?;
-    }
-
-    // Clear cart
-    CartRepository::clear_cart(&state.db.pool, user_id)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiError::internal_error(e.to_string()))))?;
+        .map_err(|e| {
+            let msg = e.to_string();
+            if msg.contains("Insufficient stock") || msg.contains("not found") {
+                (StatusCode::BAD_REQUEST, Json(ApiError::bad_request(msg)))
+            } else {
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiError::internal_error(msg)))
+            }
+        })?;
 
     Ok(Json(OrderResponse { order: order_with_items }))
 }

@@ -5,6 +5,11 @@ use uuid::Uuid;
 use anyhow::Result;
 use shared::UserRole;
 
+/// JWT issuer identifier
+const JWT_ISSUER: &str = "rust-ecommerce";
+/// JWT audience identifier
+const JWT_AUDIENCE: &str = "rust-ecommerce-api";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: Uuid,       // user id
@@ -12,6 +17,8 @@ pub struct Claims {
     pub role: UserRole,
     pub exp: i64,        // expiration time
     pub iat: i64,        // issued at
+    pub iss: String,     // issuer
+    pub aud: String,     // audience
 }
 
 pub fn create_token(user_id: Uuid, email: &str, role: &UserRole, secret: &str) -> Result<String> {
@@ -24,6 +31,8 @@ pub fn create_token(user_id: Uuid, email: &str, role: &UserRole, secret: &str) -
         role: role.clone(),
         exp: exp.timestamp(),
         iat: now.timestamp(),
+        iss: JWT_ISSUER.to_string(),
+        aud: JWT_AUDIENCE.to_string(),
     };
 
     let token = encode(
@@ -36,10 +45,14 @@ pub fn create_token(user_id: Uuid, email: &str, role: &UserRole, secret: &str) -
 }
 
 pub fn verify_token(token: &str, secret: &str) -> Result<Claims> {
+    let mut validation = Validation::default();
+    validation.set_issuer(&[JWT_ISSUER]);
+    validation.set_audience(&[JWT_AUDIENCE]);
+
     let token_data = decode::<Claims>(
         token,
         &DecodingKey::from_secret(secret.as_bytes()),
-        &Validation::default(),
+        &validation,
     )?;
 
     Ok(token_data.claims)

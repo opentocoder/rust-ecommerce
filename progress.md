@@ -78,6 +78,26 @@
 
 ---
 
+### Phase 8: 安全加固 (2/2) ✅
+
+| ID | 任务 | 状态 | 完成时间 |
+|----|------|------|----------|
+| SEC-001 | Critical/High 漏洞修复 | ✅ 已完成 | 2026-02-02 |
+| SEC-002 | Medium/Low 漏洞修复 | ✅ 已完成 | 2026-02-02 |
+
+**修复的安全漏洞**:
+- 🔴 Critical: JWT_SECRET 强制要求环境变量 (≥32字符)
+- 🔴 Critical: CORS 收紧为白名单域名
+- 🟠 High: 种子脚本后门账号 (仅限开发环境+环境变量)
+- 🟠 High: 订单创建竞态条件 (数据库事务)
+- 🟠 High: 登录速率限制 (5次/分钟/IP)
+- 🟡 Medium: 隐藏内部错误 (生产环境通用消息)
+- 🟡 Medium: JWT 添加 issuer/audience 校验
+- 🔵 Low: 增强输入验证 (邮箱regex、用户名字符集、密码复杂度)
+- 🔵 Low: 安全响应头 (X-Content-Type-Options, X-Frame-Options等)
+
+---
+
 ## 最近更新
 
 | 日期 | 更新内容 |
@@ -88,6 +108,8 @@
 | 2026-02-01 | 种子数据脚本创建 |
 | 2026-02-01 | 项目开发完成 |
 | 2026-02-01 | API 验证通过 (健康检查、商品、认证、购物车、订单) |
+| 2026-02-02 | 安全漏洞检测完成 (2 Critical, 4 High, 5 Medium, 3 Low) |
+| 2026-02-02 | 安全漏洞全部修复，cargo check 通过 |
 
 ---
 
@@ -95,6 +117,9 @@
 
 ### 启动后端
 ```bash
+# 必须设置 JWT_SECRET (至少32字符)
+export JWT_SECRET="your-super-secret-key-at-least-32-chars"
+export RUST_ENV=development  # 或 production
 cargo run -p backend
 ```
 

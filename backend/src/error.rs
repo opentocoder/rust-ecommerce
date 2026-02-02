@@ -9,6 +9,10 @@ pub struct AppError(pub anyhow::Error);
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        // Log the actual error for debugging
+        tracing::error!("Internal error: {}", self.0);
+
+        // Return sanitized error to client
         let error = ApiError::internal_error(self.0.to_string());
         (StatusCode::INTERNAL_SERVER_ERROR, Json(error)).into_response()
     }

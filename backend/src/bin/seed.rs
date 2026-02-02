@@ -163,39 +163,65 @@ async fn seed_products(pool: &SqlitePool) -> anyhow::Result<()> {
 }
 
 async fn seed_admin(pool: &SqlitePool) -> anyhow::Result<()> {
+    // Security: Only seed admin in development environment
+    let env = std::env::var("RUST_ENV").unwrap_or_else(|_| "development".to_string());
+
+    if env != "development" && env != "dev" {
+        println!("  Skipping admin seed in non-development environment (RUST_ENV={})", env);
+        println!("  To seed admin, set RUST_ENV=development or use ADMIN_EMAIL/ADMIN_PASSWORD env vars");
+        return Ok(());
+    }
+
     println!("Seeding admin user...");
 
+    // Get admin credentials from environment or use defaults (dev only)
+    let admin_email = std::env::var("ADMIN_EMAIL")
+        .unwrap_or_else(|_| "admin@example.com".to_string());
+    let admin_password = std::env::var("ADMIN_PASSWORD")
+        .unwrap_or_else(|_| {
+            println!("  WARNING: Using default admin password. Set ADMIN_PASSWORD for security.");
+            "admin123".to_string()
+        });
+    let admin_username = std::env::var("ADMIN_USERNAME")
+        .unwrap_or_else(|_| "admin".to_string());
+
     // Check if admin exists
-    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE email = 'admin@example.com'")
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE email = ?")
+        .bind(&admin_email)
         .fetch_one(pool)
         .await?;
 
     if count.0 > 0 {
-        println!("  Admin user already exists");
+        println!("  Admin user already exists: {}", admin_email);
         return Ok(());
     }
 
     let id = Uuid::new_v4();
     let now = Utc::now().to_rfc3339();
 
-    // Password: admin123 (hashed with argon2)
-    // In production, use proper password hashing
-    let password_hash = "$argon2id$v=19$m=19456,t=2,p=1$YWRtaW5zYWx0MTIzNDU2$bH8DnF8NKgYQgZpG8xyG8Q";
+    // Hash the password properly using argon2
+    let salt = argon2::password_hash::SaltString::generate(&mut rand::rngs::OsRng);
+    let argon2 = argon2::Argon2::default();
+    let password_hash = argon2::PasswordHasher::hash_password(&argon2, admin_password.as_bytes(), &salt)
+        .map_err(|e| anyhow::anyhow!("Failed to hash password: {}", e))?
+        .to_string();
 
     sqlx::query(
         r#"
         INSERT INTO users (id, username, email, password_hash, role, created_at)
-        VALUES (?, 'admin', 'admin@example.com', ?, 'admin', ?)
+        VALUES (?, ?, ?, ?, 'admin', ?)
         "#,
     )
     .bind(id.to_string())
-    .bind(password_hash)
+    .bind(&admin_username)
+    .bind(&admin_email)
+    .bind(&password_hash)
     .bind(&now)
     .execute(pool)
     .await?;
 
-    println!("  Admin user created: admin@example.com");
-    println!("  Note: For testing, register a new user through the app");
+    println!("  Admin user created: {}", admin_email);
+    println!("  IMPORTANT: Change the admin password after first login!");
 
     Ok(())
 }

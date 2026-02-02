@@ -2,11 +2,131 @@ use anyhow::Result;
 use chrono::Utc;
 use sqlx::SqlitePool;
 use uuid::Uuid;
-use shared::{Order, OrderItem, OrderStatus, OrderWithItems};
+use shared::{Order, OrderItem, OrderStatus, OrderWithItems, CartItemWithProduct};
 
 pub struct OrderRepository;
 
 impl OrderRepository {
+    /// Atomic order creation with stock validation and update
+    /// Uses database transaction to prevent race conditions
+    pub async fn create_order_atomic(
+        pool: &SqlitePool,
+        user_id: Uuid,
+        cart_items: &[CartItemWithProduct],
+    ) -> Result<OrderWithItems> {
+        let mut tx = pool.begin().await?;
+
+        let order_id = Uuid::new_v4();
+        let now = Utc::now();
+        let mut order_items = Vec::new();
+        let mut total: f64 = 0.0;
+
+        // Verify stock and collect order items within transaction
+        for item in cart_items {
+            // Lock the row by selecting FOR UPDATE (SQLite handles this implicitly in transaction)
+            let row: Option<(i32, String)> = sqlx::query_as(
+                "SELECT stock, name FROM products WHERE id = ? AND is_active = 1"
+            )
+            .bind(item.product_id.to_string())
+            .fetch_optional(&mut *tx)
+            .await?;
+
+            let (stock, product_name) = row.ok_or_else(|| {
+                anyhow::anyhow!("Product {} not found or inactive", item.product_id)
+            })?;
+
+            if stock < item.quantity {
+                return Err(anyhow::anyhow!("Insufficient stock for {}: requested {}, available {}",
+                    product_name, item.quantity, stock));
+            }
+
+            // Update stock immediately within transaction
+            sqlx::query(
+                "UPDATE products SET stock = stock - ?, updated_at = ? WHERE id = ?"
+            )
+            .bind(item.quantity)
+            .bind(now.to_rfc3339())
+            .bind(item.product_id.to_string())
+            .execute(&mut *tx)
+            .await?;
+
+            let subtotal = item.quantity as f64 * item.product_price;
+            total += subtotal;
+
+            order_items.push((item.product_id, product_name, item.quantity, item.product_price, subtotal));
+        }
+
+        // Create order
+        sqlx::query(
+            r#"
+            INSERT INTO orders (id, user_id, status, total, created_at, updated_at)
+            VALUES (?, ?, 'pending', ?, ?, ?)
+            "#,
+        )
+        .bind(order_id.to_string())
+        .bind(user_id.to_string())
+        .bind(total)
+        .bind(now.to_rfc3339())
+        .bind(now.to_rfc3339())
+        .execute(&mut *tx)
+        .await?;
+
+        // Create order items
+        let mut result_items = Vec::new();
+        for (product_id, product_name, quantity, price, subtotal) in order_items {
+            let item_id = Uuid::new_v4();
+
+            sqlx::query(
+                r#"
+                INSERT INTO order_items (id, order_id, product_id, product_name, quantity, price, subtotal)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                "#,
+            )
+            .bind(item_id.to_string())
+            .bind(order_id.to_string())
+            .bind(product_id.to_string())
+            .bind(&product_name)
+            .bind(quantity)
+            .bind(price)
+            .bind(subtotal)
+            .execute(&mut *tx)
+            .await?;
+
+            result_items.push(OrderItem {
+                id: item_id,
+                order_id,
+                product_id,
+                product_name,
+                quantity,
+                price,
+                subtotal,
+            });
+        }
+
+        // Clear cart within transaction
+        sqlx::query("DELETE FROM cart_items WHERE user_id = ?")
+            .bind(user_id.to_string())
+            .execute(&mut *tx)
+            .await?;
+
+        // Commit transaction
+        tx.commit().await?;
+
+        let order = Order {
+            id: order_id,
+            user_id,
+            status: OrderStatus::Pending,
+            total,
+            created_at: now,
+            updated_at: now,
+        };
+
+        Ok(OrderWithItems {
+            order,
+            items: result_items,
+        })
+    }
+
     pub async fn create(
         pool: &SqlitePool,
         user_id: Uuid,
